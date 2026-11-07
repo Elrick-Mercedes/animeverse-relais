@@ -8,10 +8,11 @@ const PORT = process.env.PORT || 8080;
 const MAX_PLAYERS = 6;
 const LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const rooms = new Map(); // code -> { members: Map(id -> ws), next: id suivant }
+const queues = new Map(); // file de recherche (« duel », « eq », « rnd ») -> joueur qui attend un adversaire
 
 const server = http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-  res.end(`Animeverse Arena relais OK - ${rooms.size} salon(s)\n`);
+  res.end(`Animeverse Arena relais OK - ${rooms.size} salon(s), ${queues.size} joueur(s) en recherche\n`);
 });
 const wss = new WebSocketServer({ server });
 
@@ -26,6 +27,12 @@ function newCode() {
 
 function send(ws, obj) {
   if (ws.readyState === 1) ws.send(JSON.stringify(obj));
+}
+
+// retire un joueur de la file de recherche où il attend
+function unqueue(ws) {
+  if (ws.queue && queues.get(ws.queue) === ws) queues.delete(ws.queue);
+  ws.queue = null;
 }
 
 function leave(ws) {
@@ -69,11 +76,36 @@ wss.on("connection", (ws) => {
       const out = { t: "msg", from: ws.pid, data: m.data };
       if (m.to) { const dst = room.members.get(m.to); if (dst) send(dst, out); }
       else for (const [id, dst] of room.members) if (id !== ws.pid) send(dst, out);
+    } else if (m.t === "queue") {
+      // recherche automatique : les deux premiers joueurs de la même file sont mis ensemble dans un salon
+      leave(ws);
+      unqueue(ws);
+      const q = String(m.q || "duel").slice(0, 12);
+      const other = queues.get(q);
+      if (other && other !== ws && other.readyState === 1) {
+        queues.delete(q);
+        other.queue = null;
+        const code = newCode();
+        rooms.set(code, { members: new Map([[1, other], [2, ws]]), next: 3 });
+        other.room = code; other.pid = 1;
+        ws.room = code; ws.pid = 2;
+        send(other, { t: "joined", room: code, id: 1, match: true });
+        send(ws, { t: "joined", room: code, id: 2, match: true });
+      } else {
+        queues.set(q, ws);
+        ws.queue = q;
+        send(ws, { t: "queued", q });
+      }
+    } else if (m.t === "unqueue") {
+      unqueue(ws);
+    } else if (m.t === "ping") {
+      send(ws, { t: "pong" });
     } else if (m.t === "leave") {
+      unqueue(ws);
       leave(ws);
     }
   });
-  ws.on("close", () => leave(ws));
+  ws.on("close", () => { unqueue(ws); leave(ws); });
 });
 
 // garde les connexions ouvertes et nettoie les joueurs disparus
