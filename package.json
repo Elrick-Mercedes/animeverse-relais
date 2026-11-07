@@ -1,0 +1,9 @@
+{
+  "name": "animeverse-arena-relais",
+  "version": "1.0.0",
+  "description": "Serveur relais du multijoueur en ligne d'Animeverse Arena",
+  "main": "relay.js",
+  "scripts": { "start": "node relay.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "ws": "^8.18.0" }
+}

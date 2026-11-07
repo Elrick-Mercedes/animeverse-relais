@@ -1,0 +1,8 @@
+# Configuration Render : crée tout seul le service « animeverse-relais » (offre gratuite).
+services:
+  - type: web
+    name: animeverse-relais
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
